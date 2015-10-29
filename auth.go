@@ -15,51 +15,40 @@ type User struct {
 	Created time.Time `xorm:"created"`
 }
 
-type Group struct {
-	Id      int64
-	Name    string    `xorm:"unique"`
-	Created time.Time `xorm:"created"`
-}
-
-type UserGroup struct {
-	UserName  string `xorm:"pk"`
-	GroupName string `xorm:"pk"`
-}
-
-type Perm struct {
-	Id      int64
-	Path    string `xorm:"unique"`
-	Owner   string
-	Group   string
-	Mode    os.FileMode
-	Created time.Time `xorm:"created"`
-	Updated time.Time `xorm:"updated"`
-}
-
 type XormAuth struct {
 	allowAnony  bool
 	defaultPerm os.FileMode
 	orm         *xorm.Engine
+	encryptFunc func(string) string
 }
 
-func (auth *XormAuth) CheckPasswd(user, pass string) bool {
-	if auth.allowAnony && user == "anonymous" {
+func (auth *XormAuth) CheckPasswd(userName, pass string) bool {
+	if auth.allowAnony && userName == "anonymous" {
 		return true
 	}
 
-	has, err := auth.orm.Get(&User{Name: user, Pass: pass})
+	var user = User{Name: userName}
+	has, err := auth.orm.Get(&user)
 	if err != nil {
 		log.Error(err)
 		return false
 	}
-	return has
+	if !has {
+		return false
+	}
+
+	return user.Pass == auth.encryptFunc(pass)
 }
 
-func NewXormAuth(orm *xorm.Engine) (*XormAuth, error) {
-	err := orm.Sync(new(User), new(Perm))
+func NoEncrypt(s string) string {
+	return s
+}
+
+func NewXormAuth(orm *xorm.Engine, allowAnony bool, perm os.FileMode, encryptFunc func(string) string) (*XormAuth, error) {
+	err := orm.Sync2(new(User))
 	if err != nil {
 		return nil, err
 	}
 
-	return &XormAuth{false, os.ModePerm, orm}, nil
+	return &XormAuth{allowAnony, os.ModePerm, orm, encryptFunc}, nil
 }
